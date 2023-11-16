@@ -14,3 +14,5 @@ Code/slurm*
 Code/train.txt
 Residuals/*
 Code/__pycache__/*
+
+Data/*
