@@ -69,7 +69,6 @@ class MatReader(object):
     def set_float(self, to_float):
         self.to_float = to_float
 
-
 # normalization, pointwise gaussian
 class UnitGaussianNormalizer(object):
     def __init__(self, x, eps=0.00001, time_last=True):
@@ -77,22 +76,13 @@ class UnitGaussianNormalizer(object):
 
         # x could be in shape of ntrain*n or ntrain*T*n or ntrain*n*T in 1D
         # x could be in shape of ntrain*w*l or ntrain*T*w*l or ntrain*w*l*T in 2D
-        x_np = x.detach().numpy()
         self.mean = torch.mean(x, 0)
-        self.min = np.amin(x_np)
-        self.max = np.amax(x_np)
-        # self.std = torch.std(x, 0)
-        self.std = torch.from_numpy(np.std(x_np, axis=0))
-
+        self.std = torch.std(x, 0)
         self.eps = eps
         self.time_last = time_last # if the time dimension is the last dim
 
-        print (torch.min(self.mean), torch.max(self.mean))
-
-        print (torch.min(self.std), torch.max(self.std))
-
     def encode(self, x):
-        x = (x - self.min) / (self.max - self.min)
+        x = (x - self.mean) / (self.std + self.eps)
         return x
 
     def decode(self, x, sample_idx=None):
@@ -108,7 +98,7 @@ class UnitGaussianNormalizer(object):
                     std = self.std[...,sample_idx] + self.eps # T*batch*n
                     mean = self.mean[...,sample_idx]
         # x is in shape of batch*(spatial discretization size) or T*batch*(spatial discretization size)
-        x = (x * (self.max - self.min)) + self.min
+        x = (x * std) + mean
         return x
 
     def to(self, device):

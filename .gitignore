@@ -1,0 +1,16 @@
+# these have too much experimental checkpointing, dont commit these
+# rather move to FinalizedModels, FinalizedLosses
+Losses/*
+Models/*
+
+ppatil/*
+cdeng/*
+nbalaji/*
+
+# things that aren't cleaned up yet
+Code/cdeng
+Code/slurm_output
+Code/slurm*
+Code/train.txt
+Residuals/*
+Code/__pycache__/*
