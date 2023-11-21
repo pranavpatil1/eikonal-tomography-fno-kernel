@@ -11,8 +11,10 @@ nbalaji/*
 Code/cdeng
 Code/slurm_output
 Code/slurm*
+Code/memprofiles/*
 Code/train.txt
+Code/*.npy
 Residuals/*
-Code/__pycache__/*
+__pycache__
 
 Data/*

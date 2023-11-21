@@ -12,6 +12,7 @@ import torch
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 from IPython import display
+from natsort import natsorted
 
 from timeit import default_timer
 from utilities3 import *
@@ -179,35 +180,42 @@ class LpLoss(object):
     def __call__(self, x, y):
         return self.rel(x, y)
 
-class EikonalDataset(Dataset):
+class EikonalDatasetIdv(Dataset):
     def __init__(self, root_dir, dataset_type, transform=None):
 
         #partion based on train/test
-        self.image_names = os.listdir(root_dir)
+        self.image_names = os.listdir(root_dir)        
         
         self.root_dir = root_dir
         self.transform = transform 
-        self.image_names = natsorted(image_names)
+        self.image_names = natsorted(self.image_names)
 
         self.dataset_type = dataset_type
 
         self.XX, self.ZZ = np.meshgrid(np.linspace(0, 1, 100), np.linspace(0, 1, 100))
 
+        idxs = range(0, len(self.image_names))
+        self.train_idx = np.random.chpoice(len(self.image_names), int(len(self.image_names)*0.8))
+        self.test_idx = np.setdiff1d(idxs, self.train_idx)
+
+        np.save("train_idxs.npy", self.train_idx)
+        np.save("test_idxs.npy", self.test_idx)
+    
+        #save index split offline
+
 
     def __getitem__(self, i):
-        img_path = os.path.join(self.root_dir, self.image_names[i//2])
+        img_path = os.path.join(self.root_dir, self.image_names[i])
         file = np.loadz(img_path)
         max_val = 100
 
-        if self.dataset_type == 'train':
-            vels=torch.tensor(file["vels"])
-            kernel=torch.tensor(file["kernels"])
-            source_loc=torch.tensor(file["source_loc"])
-            rec_loc=torch.tensor(file["rec_loc"])
+        vels=torch.tensor(file["vels"])
+        kernel=torch.tensor(file["kernels"])
+        source_loc=torch.tensor(file["source_loc"])
+        rec_loc=torch.tensor(file["rec_loc"])
 
-            source_loc = torch.tensor(gaussian_function(self.XX, self.ZZ, np.asarray(source_loc)[::-1]/max_val))
-            rec_loc = torch.tensor(gaussian_function(self.XX, self.ZZ, np.asarray(rec_loc)[::-1]/max_val))
-
+        source_loc = torch.tensor(gaussian_function(self.XX, self.ZZ, np.asarray(source_loc)[::-1]/max_val))
+        rec_loc = torch.tensor(gaussian_function(self.XX, self.ZZ, np.asarray(rec_loc)[::-1]/max_val))
 
         x = torch.from_numpy(np.asarray([np.float32(vels), np.float32(source_loc),np.float32(rec_loc)]))
         y = torch.from_numpy(np.asarray([np.float32(kernel)]))
@@ -215,10 +223,10 @@ class EikonalDataset(Dataset):
         return {'x': x, 'y': y, 'source': self.source_loc[i], 'receiver': self.rec_loc[i]}
 
     def __len__(self):
-        return len(self.image_names)*2 
+        return len(self.image_names)
     
 
-
+#feed in min, mox, mean, std into normalizer instead of dataset
 # normalization, pointwise gaussian
 class UnitGaussianNormalizer(object):
     def __init__(self, x, eps=0.00001, time_last=True):

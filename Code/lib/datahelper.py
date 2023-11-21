@@ -12,8 +12,9 @@ import torch
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 from IPython import display
-
 from timeit import default_timer
+
+from lib.gaussian import *
 
 class EikonalDataset(Dataset):
     def __init__(self, fid, dataset_type):
@@ -21,8 +22,6 @@ class EikonalDataset(Dataset):
         max_val = 100
         if dataset_type == 'train':
             self.vels=torch.tensor(fid["vels"][:train_test_split])
-            # print(self.vels[0].cpu().numpy())
-
             self.kernels=torch.tensor(fid["kernels"][:train_test_split])
             self.source_loc=torch.tensor(fid["source_loc"][:train_test_split])
             self.rec_loc=torch.tensor(fid["rec_loc"][:train_test_split])
@@ -46,74 +45,7 @@ class EikonalDataset(Dataset):
 
     def __len__(self):
         return len(self.vels)
-    
 
-
-# normalization, pointwise gaussian
-class UnitGaussianNormalizer(object):
-    def __init__(self, x, eps=0.00001, time_last=True):
-        super(UnitGaussianNormalizer, self).__init__()
-
-        # x could be in shape of ntrain*n or ntrain*T*n or ntrain*n*T in 1D
-        # x could be in shape of ntrain*w*l or ntrain*T*w*l or ntrain*w*l*T in 2D
-        x_np = x.detach().numpy()
-        self.mean = torch.mean(x, 0)
-        self.min = np.amin(x_np)
-        self.max = np.amax(x_np)
-        # self.std = torch.std(x, 0)
-        self.std = torch.from_numpy(np.std(x_np, axis=0))
-
-        self.eps = eps
-        self.time_last = time_last # if the time dimension is the last dim
-
-        print (torch.min(self.mean), torch.max(self.mean))
-
-        print (torch.min(self.std), torch.max(self.std))
-
-    def encode(self, x):
-        x = (x - self.min) / (self.max - self.min)
-        return x
-
-    def decode(self, x, sample_idx=None):
-        # sample_idx is the spatial sampling mask
-        if sample_idx is None:
-            std = self.std + self.eps # n
-            mean = self.mean
-        else:
-            if self.mean.ndim == sample_idx.ndim or self.time_last:
-                std = self.std[sample_idx] + self.eps  # batch*n
-                mean = self.mean[sample_idx]
-            if self.mean.ndim > sample_idx.ndim and not self.time_last:
-                    std = self.std[...,sample_idx] + self.eps # T*batch*n
-                    mean = self.mean[...,sample_idx]
-        # x is in shape of batch*(spatial discretization size) or T*batch*(spatial discretization size)
-        x = (x * (self.max - self.min)) + self.min
-        return x
-
-    def to(self, device):
-        if torch.is_tensor(self.mean):
-            self.mean = self.mean.to(device)
-            self.std = self.std.to(device)
-        else:
-            self.mean = torch.from_numpy(self.mean).to(device)
-            self.std = torch.from_numpy(self.std).to(device)
-        return self
-
-    def cuda(self):
-        self.mean = self.mean.cuda()
-        self.std = self.std.cuda()
-
-    def cpu(self):
-        self.mean = self.mean.cpu()
-        self.std = self.std.cpu()
-
-
-def gaussian_function(XX, ZZ, src):
-    x_src, z_src = src[0], src[1]
-    sigma2 = 0.0005
-    grid = np.sqrt(1/sigma2 * ((XX-x_src)**2 + (ZZ-z_src)**2))
-    grid = 1 / (sigma2 * np.sqrt(2*math.pi)) * (np.exp(-0.5 * grid**2))
-    return grid
 
 
 def save_losses(train_fno, test_fno, log_train_fno, log_test_fno, mode, width, epoch):
