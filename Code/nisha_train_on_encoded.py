@@ -18,7 +18,7 @@ from timeit import default_timer
 
 from lib.utilities3 import *
 from lib.datahelper import *
-from lib.dataset_raw import *
+from lib.dataset_raw_transform import *
 from lib.fno import *
 
 from lib.memorytracking import save_memory_usage
@@ -27,9 +27,20 @@ import datetime
 torch.manual_seed(0)
 np.random.seed(0)
 
+# if we should utilize GPU cores
 GPU = True
+print(torch.cuda.is_available())
+# if we should use smaller version of dataset
 DATASET_BIG = True
-EXPERIMENT = "encoded"
+# change this on every experiment
+EXPERIMENT = "encoded_transform_big_1000_epochs_checkpoint_20"
+EXPERIMENT = EXPERIMENT + f"_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+# how often to save model/residual graphs
+SAVE_INTERVAL = 10
+# how many epochs to run for
+EPOCHS = 1000
+# what batch size to use
+BATCH_SIZE = 48
 
 if __name__ == '__main__':
     filename = '../Data/DatVel5000_Sou10_Rec10_Dim100x100_Gradient_Encoded.npz'
@@ -52,23 +63,15 @@ if __name__ == '__main__':
     
     savemem("load_dataset")
 
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=16, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_data, batch_size=16, shuffle=False)
+    train_loader = torch.utils.data.DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
+    test_loader = torch.utils.data.DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=False)
+    test_loader_single = torch.utils.data.DataLoader(test_data, batch_size=1, shuffle=False)
 
     savemem("dataloader")
 
-    sub = 1
-    S = 100
-    T_in = 10
-    T = 40 # T=40 for V1e-3; T=20 for V1e-4; T=10 for V1e-5;
-    step = 1
+    learning_rate = 0.0005
 
-    batch_size = 16
-    learning_rate = 0.001
-    epochs = 10
-    iterations = epochs*(32//batch_size)
-
-    modes = 6
+    modes = 12
     width = 128
     
     kernel_metadata_file='./lib/largefile-kernels-metadata.pkl'
@@ -88,13 +91,17 @@ if __name__ == '__main__':
     ######## TRAINING
 
     print ("begin training!!")
-
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=16, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_data, batch_size=16, shuffle=False)
-    test_loader_single = torch.utils.data.DataLoader(test_data, batch_size=1, shuffle=False)
-
     fno_model = FNO2d(modes, modes, width)
+
+    checkpoint_file = "/central/groups/mlprojects/eikonal/Experiments/model-big-transform-encoded_transform_big_2023-11-27_00-55-01/mode-12-width-128-epoch-20"
+    fno_model = torch.load(checkpoint_file)
+    checkpoint_epoch = 20
+
+
     if GPU:
+        # for multiple GPU usage
+        if torch.cuda.device_count() > 1:
+            fno_model = nn.DataParallel(fno_model)
         fno_model = fno_model.cuda()
 
     test_fno = []
@@ -102,7 +109,7 @@ if __name__ == '__main__':
     log_test_fno = []
     log_train_fno = []
 
-    optimizer = torch.optim.AdamW(fno_model.parameters(), lr=0.0005, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(fno_model.parameters(), lr=learning_rate, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50)
 
     myloss = LpLoss(size_average=False)
@@ -120,14 +127,16 @@ if __name__ == '__main__':
 
     savemem("begin_train")
 
-    prefix = "modelSmall"
+    prefix = "model-small-transform"
     if DATASET_BIG:
-        prefix = "modelBig"
+        prefix = "model-big-transform"
+    
+    prefix += f"-{EXPERIMENT}"
 
-    for ep in range(1, epochs + 1):
+    for ep in range(checkpoint_epoch + 1, EPOCHS + 1):
         savemem(f"epoch{ep}")
-        if ep % 50 == 0:
-            torch.save(fno_model, f'/central/groups/mlprojects/eikonal/Models/{prefix}-mode' + str(modes) + '-width-' + str(width) + '-epoch-' + str(ep))
+        if ep < 5 or ep % SAVE_INTERVAL == 0:
+            save_models(fno_model, ep, modes, width, prefix=prefix)
 
         fno_model.eval()
         test_l2 = 0.0
@@ -146,7 +155,7 @@ if __name__ == '__main__':
 
                 out = y_normalizer.decode(out)
 
-                curr_loss = myloss(out, y.view(batch_size,-1)).item()
+                curr_loss = myloss(out, y.view(len(y),-1)).item()
                 test_l2 += curr_loss
 
         fno_model.train()
@@ -168,15 +177,15 @@ if __name__ == '__main__':
             if GPU:
                 y = y.cuda()
 
-            loss = myloss(out, y.view(batch_size,-1))
+            loss = myloss(out, y.view(len(y),-1))
             loss.backward()
 
             optimizer.step()
             scheduler.step()
             train_l2 += loss.item()
 
-        train_l2/= 2500.0
-        test_l2 /= 500.0
+        train_l2/= len(train_data)
+        test_l2 /= len(test_data)
         print(f"epoch: {ep}, \tl2 train: {train_l2} \tl2 test: {test_l2}")
 
 
@@ -184,8 +193,8 @@ if __name__ == '__main__':
         test_fno.append(test_l2)
         log_train_fno.append(math.log(train_l2))
         log_test_fno.append(math.log(test_l2))
-        save_losses(train_fno, test_fno, log_train_fno, log_test_fno, modes, width, ep)
-        if ep % 50 == 0:
+        save_losses(train_fno, test_fno, log_train_fno, log_test_fno, modes, width, prefix=prefix)
+        if ep % SAVE_INTERVAL == 0:
             test_losses = []
             with torch.no_grad():
                 for x, y in test_loader_single:
@@ -201,12 +210,12 @@ if __name__ == '__main__':
 
                     out = y_normalizer.decode(out)
 
-                    curr_loss = myloss(out, y.view(1,-1)).item()
+                    curr_loss = myloss(out, y.view(1, -1)).item()
                     test_l2 += curr_loss
                     test_losses.append(curr_loss)
 
             plt.close('all')
-            plot_loss_curves(train_fno, test_fno, log_train_fno, log_test_fno, modes, width, ep)
+            plot_loss_curves(train_fno, test_fno, log_train_fno, log_test_fno, modes, width, ep, prefix=prefix)
             # plot_residuals(test_losses, modes, width, ep)
             for i in range(len(train_fno)):
                 print(f"epoch: {i}, \tl2 train: {train_fno[i]} \tl2 test: {test_fno[i]}")

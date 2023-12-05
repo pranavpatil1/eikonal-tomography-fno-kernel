@@ -4,7 +4,7 @@ from lib.gaussian import *
 
 class EikonalDatasetRaw(Dataset):
     def __init__(self, fid, dataset_type):
-        train_test_split = 2500
+        train_test_split = int(len(fid["vel"]) * 5 / 6)
 
         self.max_val = 100
 
@@ -24,27 +24,19 @@ class EikonalDatasetRaw(Dataset):
     def __getitem__(self, i):
         x_np = self.vels[i]
         y_np = self.kernels[i]
-        source_np = gaussian_function(self.XX, self.ZZ, self.source_loc[i][::-1])/self.max_val
-        rec_np = gaussian_function(self.XX, self.ZZ, self.rec_loc[i][::-1])/self.max_val
+        source_np = gaussian_function(self.XX, self.ZZ, self.source_loc[i][::-1]/self.max_val)
+        rec_np = gaussian_function(self.XX, self.ZZ, self.rec_loc[i][::-1]/self.max_val)
 
         x_np = x_np.reshape(100, 100, 1)
-        source_np = x_np.reshape(100, 100, 1)
-        rec_np = x_np.reshape(100, 100, 1)
+        source_np = source_np.reshape(100, 100, 1)
+        rec_np = rec_np.reshape(100, 100, 1)
 
         x_full_np = np.concatenate((x_np, source_np, rec_np), axis=2)
 
-        # x = torch.from_numpy()
-        # y = torch.from_numpy()
-        # source = 
-        # rec = gaussian_function(self.XX, self.ZZ, self.rec_loc[i][::-1])/max_val
+        x = torch.from_numpy(x_full_np)
+        y = torch.from_numpy(y_np)
 
-        # print (x_np.shape)
-        # print (source_np.shape)
-        # print (rec_np.shape)
-        # print (x_full_np.shape)
-        # print (y_np.shape)
-
-        return x_full_np, y_np
+        return x, y
 
     def __len__(self):
         return len(self.vels)

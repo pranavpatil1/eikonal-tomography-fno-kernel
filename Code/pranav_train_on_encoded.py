@@ -13,6 +13,7 @@ import pickle
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 from IPython import display
+import argparse
 
 from timeit import default_timer
 
@@ -27,195 +28,190 @@ import datetime
 torch.manual_seed(0)
 np.random.seed(0)
 
-# if we should utilize GPU cores
-GPU = True
-# if we should use smaller version of dataset
-DATASET_BIG = True
+parser = argparse.ArgumentParser(
+                    prog='Eikonal FNO Training',
+                    description='Trains an FNO model to learn kernels')
+
+parser.add_argument('-m', '--modes', type=int)
+parser.add_argument('-w', '--width', type=int)
+parser.add_argument('-b', '--batch_size', type=int)
+parser.add_argument('-e', '--epochs', type=int, default=250)
+parser.add_argument('-s', '--saveinterval', type=int, default=10)
+
+# bool args
+parser.add_argument('--cpu', action="store_true")
+parser.add_argument('--smalldataset', action="store_true")
+
+# load everything
+args = parser.parse_args()
+
+MODES = args.modes
+WIDTH = args.width
+BATCH_SIZE = args.batch_size
+
+# if we should use cuda
+GPU = False if args.cpu else True
+# if we should use full version of dataset
+DATASET_BIG = False if args.smalldataset else True # how many epochs to run for
+EPOCHS = args.epochs
+# how often to save model/residual graphs
+SAVE_INTERVAL = args.saveinterval
+
 # change this on every experiment
-EXPERIMENT = "encoded"
+EXPERIMENT = f"encoded-batchsize{BATCH_SIZE}-{'gpu' if GPU else 'cpu'}-{'BIG' if DATASET_BIG else 'SMALL'}-{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
 
-if __name__ == '__main__':
-    filename = '../Data/DatVel5000_Sou10_Rec10_Dim100x100_Gradient_Encoded.npz'
-    if not DATASET_BIG:
-        filename = '../Data/DatVel30_Sou100_Rec100_Dim100x100_Downsampled_Encoded.npz'
-    
-    memory_savefile = f"memprofiles/out-{EXPERIMENT}-{'gpu' if GPU else 'cpu'}-{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.pkl"
-    memory_tracker = []
+print ("=" * 40)
+print ("RUN DETAILS")
+print ("=" * 40)
 
-    # shorthand
-    savemem = lambda event: save_memory_usage(memory_tracker, event, gpu=GPU, savefile=memory_savefile)
-    savemem("start")
+print (f"MODES={MODES}, WIDTH={WIDTH}, BATCH SIZE={BATCH_SIZE}, GPU={GPU}, BIG DATASET={DATASET_BIG}, EPOCHS={EPOCHS}, SAVE INTERVAL={SAVE_INTERVAL}")
+print()
 
-    print ("loading dataset")
-    with np.load(filename, allow_pickle=True) as fid:
-        train_data = EikonalDatasetRaw(fid, 'train')
-        test_data = EikonalDatasetRaw(fid, 'test')
+print ("=" * 40)
+print ("BEGIN RUN")
+print ("=" * 40)
 
-    print ("finished loading dataset")
-    
-    savemem("load_dataset")
+filename = '../Data/DatVel5000_Sou10_Rec10_Dim100x100_Gradient_Encoded.npz'
+if not DATASET_BIG:
+    filename = '../Data/DatVel30_Sou100_Rec100_Dim100x100_Downsampled_Encoded.npz'
 
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=16, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_data, batch_size=16, shuffle=False)
+memory_savefile = f"memprofiles/out-{EXPERIMENT}.pkl"
+memory_tracker = []
 
-    savemem("dataloader")
+# shorthand
+savemem = lambda event: save_memory_usage(memory_tracker, event, gpu=GPU, savefile=memory_savefile)
+savemem("start")
 
-    sub = 1
-    S = 100
-    T_in = 10
-    T = 40 # T=40 for V1e-3; T=20 for V1e-4; T=10 for V1e-5;
-    step = 1
+print ("loading dataset")
+with np.load(filename, allow_pickle=True) as fid:
+    train_data = EikonalDatasetRaw(fid, 'train')
+    test_data = EikonalDatasetRaw(fid, 'test')
 
-    batch_size = 16
-    learning_rate = 0.001
-    epochs = 10
-    iterations = epochs*(32//batch_size)
+print ("finished loading dataset")
 
-    modes = 6
-    width = 128
-    
-    kernel_metadata_file='./lib/largefile-kernels-metadata.pkl'
+savemem("load_dataset")
 
-    with open(kernel_metadata_file, 'rb') as f:
-        kernel_metadata = pickle.loads(f.read())
+train_loader = torch.utils.data.DataLoader(train_data, batch_size=BATCH_SIZE, shuffle=True)
+test_loader = torch.utils.data.DataLoader(test_data, batch_size=BATCH_SIZE, shuffle=False)
+test_loader_single = torch.utils.data.DataLoader(test_data, batch_size=1, shuffle=False)
 
-    print ("finished loading metadata")
+savemem("dataloader")
 
-    y_normalizer = UnitGaussianNormalizer(
-        meanval=kernel_metadata['mean'],
-        stdval=kernel_metadata['std'],
-        maxval=kernel_metadata['max'],
-        minval=kernel_metadata['min'],
-    )
+learning_rate = 0.0005
 
-    ######## TRAINING
+kernel_metadata_file='./lib/largefile-kernels-metadata.pkl'
 
-    print ("begin training!!")
+with open(kernel_metadata_file, 'rb') as f:
+    kernel_metadata = pickle.loads(f.read())
 
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=16, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(test_data, batch_size=16, shuffle=False)
-    test_loader_single = torch.utils.data.DataLoader(test_data, batch_size=1, shuffle=False)
+print ("finished loading metadata")
 
-    fno_model = FNO2d(modes, modes, width)
-    if GPU:
-        fno_model = fno_model.cuda()
+y_normalizer = UnitGaussianNormalizer(
+    meanval=kernel_metadata['mean'],
+    stdval=kernel_metadata['std'],
+    maxval=kernel_metadata['max'],
+    minval=kernel_metadata['min'],
+)
 
-    test_fno = []
-    train_fno = []
-    log_test_fno = []
-    log_train_fno = []
+######## TRAINING
 
-    optimizer = torch.optim.AdamW(fno_model.parameters(), lr=0.0005, weight_decay=1e-4)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50)
+print ("begin training!!")
+fno_model = FNO2d(MODES, MODES, WIDTH)
+if GPU:
+    fno_model = fno_model.cuda()
 
-    myloss = LpLoss(size_average=False)
+test_fno = []
+train_fno = []
+log_test_fno = []
+log_train_fno = []
 
-    if GPU:
-        torch.cuda.reset_max_memory_allocated()
-        torch.cuda.empty_cache()
-        before_memory = torch.cuda.memory_allocated()
+optimizer = torch.optim.AdamW(fno_model.parameters(), lr=learning_rate, weight_decay=1e-4)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50)
 
-        t1 = default_timer()
-        y_normalizer.cuda()
+myloss = LpLoss(size_average=False)
 
-    fig = plt.figure()
-    ax = fig.add_subplot(1,1,1)
+if GPU:
+    torch.cuda.reset_max_memory_allocated()
+    torch.cuda.empty_cache()
+    before_memory = torch.cuda.memory_allocated()
 
-    savemem("begin_train")
+    t1 = default_timer()
+    y_normalizer.cuda()
 
-    prefix = "modelSmall"
-    if DATASET_BIG:
-        prefix = "modelBig"
+fig = plt.figure()
+ax = fig.add_subplot(1,1,1)
 
-    for ep in range(1, epochs + 1):
-        savemem(f"epoch{ep}")
-        if ep % 50 == 0:
-            torch.save(fno_model, f'/central/groups/mlprojects/eikonal/Models/{prefix}-mode' + str(modes) + '-width-' + str(width) + '-epoch-' + str(ep))
+savemem("begin_train")
 
-        fno_model.eval()
-        test_l2 = 0.0
+prefix = EXPERIMENT
 
-        with torch.no_grad():
-            for x, y in test_loader:
-                if GPU:
-                    x, y = x.cuda(), y.cuda()
-                x, y = x.float(), y.float()
+for ep in range(1, EPOCHS + 1):
+    savemem(f"epoch{ep}")
+    if ep < 5 or ep % SAVE_INTERVAL == 0:
+        save_models(fno_model, ep, MODES, WIDTH, prefix=prefix)
 
-                out = fno_model(x)
-                out = out.squeeze(-1)
-                y = y_normalizer.decode(y)
-                if GPU:
-                    y = y.cuda()
+    fno_model.eval()
+    test_l2 = 0.0
 
-                out = y_normalizer.decode(out)
-
-                curr_loss = myloss(out, y.view(batch_size,-1)).item()
-                test_l2 += curr_loss
-
-        fno_model.train()
-        train_l2 = 0
-        for x, y in train_loader:
+    with torch.no_grad():
+        for x, y in test_loader:
             if GPU:
                 x, y = x.cuda(), y.cuda()
             x, y = x.float(), y.float()
 
-            optimizer.zero_grad()
             out = fno_model(x)
-            if GPU:
-                out = out.cuda()
             out = out.squeeze(-1)
-            out = y_normalizer.decode(out)
-            if GPU:
-                out = out.cuda()
             y = y_normalizer.decode(y)
             if GPU:
                 y = y.cuda()
 
-            loss = myloss(out, y.view(batch_size,-1))
-            loss.backward()
+            out = y_normalizer.decode(out)
 
-            optimizer.step()
-            scheduler.step()
-            train_l2 += loss.item()
+            curr_loss = myloss(out, y.view(len(y),-1)).item()
+            test_l2 += curr_loss
 
-        train_l2/= 2500.0
-        test_l2 /= 500.0
-        print(f"epoch: {ep}, \tl2 train: {train_l2} \tl2 test: {test_l2}")
+    fno_model.train()
+    train_l2 = 0
+    for x, y in train_loader:
+        if GPU:
+            x, y = x.cuda(), y.cuda()
+        x, y = x.float(), y.float()
 
+        optimizer.zero_grad()
+        out = fno_model(x)
+        if GPU:
+            out = out.cuda()
+        out = out.squeeze(-1)
+        out = y_normalizer.decode(out)
+        if GPU:
+            out = out.cuda()
+        y = y_normalizer.decode(y)
+        if GPU:
+            y = y.cuda()
 
-        train_fno.append(train_l2)
-        test_fno.append(test_l2)
-        log_train_fno.append(math.log(train_l2))
-        log_test_fno.append(math.log(test_l2))
-        save_losses(train_fno, test_fno, log_train_fno, log_test_fno, modes, width, ep)
-        if ep % 50 == 0:
-            test_losses = []
-            with torch.no_grad():
-                for x, y in test_loader_single:
-                    if GPU:
-                        x, y = x.cuda(), y.cuda()
-                    x, y = x.float(), y.float()
+        loss = myloss(out, y.view(len(y),-1))
+        loss.backward()
 
-                    out = fno_model(x)
-                    out = out.squeeze(-1)
-                    y = y_normalizer.decode(y)
-                    if GPU:
-                        y = y.cuda()
+        optimizer.step()
+        scheduler.step()
+        train_l2 += loss.item()
 
-                    out = y_normalizer.decode(out)
+    train_l2/= len(train_data)
+    test_l2 /= len(test_data)
+    print(f"epoch: {ep}, \tl2 train: {train_l2} \tl2 test: {test_l2}")
 
-                    curr_loss = myloss(out, y.view(1,-1)).item()
-                    test_l2 += curr_loss
-                    test_losses.append(curr_loss)
+    train_fno.append(train_l2)
+    test_fno.append(test_l2)
+    log_train_fno.append(math.log(train_l2))
+    log_test_fno.append(math.log(test_l2))
 
-            plt.close('all')
-            plot_loss_curves(train_fno, test_fno, log_train_fno, log_test_fno, modes, width, ep)
-            # plot_residuals(test_losses, modes, width, ep)
-            for i in range(len(train_fno)):
-                print(f"epoch: {i}, \tl2 train: {train_fno[i]} \tl2 test: {test_fno[i]}")
-            plt.show()
+    save_losses(train_fno, test_fno, log_train_fno, log_test_fno, MODES, WIDTH, prefix=prefix)
 
+    if ep < 5 or ep % SAVE_INTERVAL == 0:
+        plot_loss_curves(train_fno, test_fno, log_train_fno, log_test_fno, MODES, WIDTH, ep, prefix=prefix)
+        for i in range(len(train_fno)):
+            print(f"epoch: {i}, \tl2 train: {train_fno[i]} \tl2 test: {test_fno[i]}")
 
-    t2 = default_timer()
-    max_memory = torch.cuda.max_memory_allocated() - before_memory
-    print(f'Max Memory Allocated: {max_memory} Time: {t2-t1}')
+t2 = default_timer()
+max_memory = torch.cuda.max_memory_allocated() - before_memory
+print(f'Max Memory Allocated: {max_memory} Time: {t2-t1}')

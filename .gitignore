@@ -8,13 +8,23 @@ cdeng/*
 nbalaji/*
 
 # things that aren't cleaned up yet
-Code/cdeng
+Code/cdeng*
+Code/ppatil*
+Code/eshani*
+Code/nisha*
+
 Code/slurm_output
 Code/slurm*
 Code/memprofiles/*
 Code/train.txt
 Code/*.npy
+
 Residuals/*
+Visualizations/*
+Experiments/*
+
+!.gitkeep
+
 __pycache__
 
 Data/*

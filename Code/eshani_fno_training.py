@@ -19,32 +19,29 @@ from lib.utilities3 import *
 from lib.datahelper import *
 from lib.fno import *
 from lib.dataset_indiv import EikonalDatasetIdv
-from lib.memorytracking import save_memory_usage
 import datetime
+
+# from lib.memorytracking import save_memory_usage
+# import datetime
 
 torch.manual_seed(0)
 np.random.seed(0)
 
 DATASET_BIG = True
 GPU = True
-
+EXPERIMENT = "encoded_eshani_indiv_big"
+EXPERIMENT = EXPERIMENT + f"_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+SAVE_INTERVAL = 5
 
 if __name__ == '__main__':
 
     filename = '/central/scratch/ebiondi/DatVel6000_Sou10_Rec10_Dim100x100_Gaussian_scale4/' 
     if not DATASET_BIG:
         filename = '../Data/DatVel30_Sou100_Rec100_Dim100x100_Downsampled.npz'
-
-    memory_savefile = f"memprofiles/out-eshaniIdv-{'gpu' if GPU else 'cpu'}-{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.pkl"
-    memory_tracker = []
-
-    # shorthand
-    savemem = lambda event: save_memory_usage(memory_tracker, event, gpu=GPU, savefile=memory_savefile)
-    savemem("start")
     
     print ("loading dataset")
-    train_data = EikonalDatasetIdv(filename, 'train')
-    test_data = EikonalDatasetIdv(filename, 'test')
+    train_data = EikonalDatasetIdv(filename, 'train', setSeed=10)
+    test_data = EikonalDatasetIdv(filename, 'test', setSeed=10)
 
     print ("finished loading dataset")
 
@@ -59,13 +56,13 @@ if __name__ == '__main__':
     T = 40 # T=40 for V1e-3; T=20 for V1e-4; T=10 for V1e-5;
     step = 1
 
-    batch_size = 16
+    batch_size = 64
     learning_rate = 0.001
-    epochs = 10
+    epochs = 1000
     iterations = epochs*(32//batch_size)
 
     modes = 6
-    width = 128
+    width = 64
 
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=16, shuffle=True)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=16, shuffle=False)
@@ -94,13 +91,17 @@ if __name__ == '__main__':
     fig = plt.figure()
     ax = fig.add_subplot(1,1,1)
 
-    prefix = "modelSmall"
+    prefix = "model-small-eshani"
     if DATASET_BIG:
-        prefix = "modelBig"
+        prefix = "model-big-eshani"
+    
+    prefix += f"-{EXPERIMENT}"
+    print("begin training loop")
     for ep in range(1, epochs + 1):
-        if ep % 50 == 0:
-            torch.save(fno_model, f'/central/groups/mlprojects/eikonal/Models/{prefix}-mode' + str(modes) + '-width-' + str(width) + '-epoch-' + str(ep))
-
+        if ep % SAVE_INTERVAL == 0:
+            save_models(fno_model, ep, modes, width, prefix=prefix)
+            
+            
         fno_model.eval()
         test_l2 = 0.0
 
@@ -115,11 +116,13 @@ if __name__ == '__main__':
 
                 out = test_data.y_encoder.decode(out)
 
-                curr_loss = myloss(out, y.view(batch_size,-1)).item()
+                curr_loss = myloss(out, y.view(len(y),-1)).item()
                 test_l2 += curr_loss
 
         fno_model.train()
         train_l2 = 0
+        
+        print("calculating losses")
         for x, y in train_loader:
             x, y = x.cuda(), y.cuda()
             x, y = x.float(), y.float()
@@ -130,7 +133,7 @@ if __name__ == '__main__':
             out = train_data.y_encoder.decode(out).cuda()
             y = train_data.y_encoder.decode(y).cuda()
 
-            loss = myloss(out, y.view(batch_size,-1))
+            loss = myloss(out, y.view(len(y),-1))
             loss.backward()
 
             optimizer.step()
@@ -139,15 +142,15 @@ if __name__ == '__main__':
 
         train_l2/= 2500.0
         test_l2 /= 500.0
-        print(f"epoch: {ep}, \tl2 train: {train_l2} \tl2 test: {test_l2}")
+        print(f"eshani, epoch: {ep}, \tl2 train: {train_l2} \tl2 test: {test_l2}")
 
 
         train_fno.append(train_l2)
         test_fno.append(test_l2)
         log_train_fno.append(math.log(train_l2))
         log_test_fno.append(math.log(test_l2))
-        save_losses(train_fno, test_fno, log_train_fno, log_test_fno, modes, width, ep)
-        if ep % 50 == 0:
+        save_losses(train_fno, test_fno, log_train_fno, log_test_fno, modes, width, prefix=prefix)
+        if ep % SAVE_INTERVAL == 0:
             test_losses = []
             with torch.no_grad():
                 for x, y in test_loader_single:
@@ -165,10 +168,9 @@ if __name__ == '__main__':
                     test_losses.append(curr_loss)
 
             plt.close('all')
-            plot_loss_curves(train_fno, test_fno, log_train_fno, log_test_fno, modes, width, ep)
-            # plot_residuals(test_losses, modes, width, ep)
+            plot_loss_curves(train_fno, test_fno, log_train_fno, log_test_fno, modes, width, ep, prefix="bigESHANI")
             for i in range(len(train_fno)):
-                print(f"epoch: {i}, \tl2 train: {train_fno[i]} \tl2 test: {test_fno[i]}")
+                print(f"eshani, epoch: {i}, \tl2 train: {train_fno[i]} \tl2 test: {test_fno[i]}")
             plt.show()
 
 

@@ -46,40 +46,52 @@ class EikonalDataset(Dataset):
     def __len__(self):
         return len(self.vels)
 
+def mkdir_if_not_exists(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
 
+def save_models(fno_model, epoch, mode, width, prefix):
+    stem = '/central/groups/mlprojects/eikonal/Experiments/'+str(prefix)+'/'
+    mkdir_if_not_exists(stem)
+    filename = stem + f'mode-{mode}-width-{width}-epoch-{epoch}'
+    torch.save(fno_model, filename)
 
-def save_losses(train_fno, test_fno, log_train_fno, log_test_fno, mode, width, epoch):
+def save_losses(train_fno, test_fno, log_train_fno, log_test_fno, mode, width, prefix="Small"):
     dct = {"Train": train_fno, "Test": test_fno, "Log Train": log_train_fno, "Log Test": log_test_fno}
     df = pd.DataFrame(dct)
-    stem = '/central/groups/mlprojects/eikonal/Losses/'
-    filename = stem + 'lossSmall-mode-' + str(mode) + '-width-' + str(width) + ".csv"
+    stem = '/central/groups/mlprojects/eikonal/Experiments/'+str(prefix)+'/'
+    mkdir_if_not_exists(stem)
+    filename = stem + f'losses-{prefix}-mode-' + str(mode) + '-width-' + str(width) + ".csv"
     df.to_csv(filename)
 
-def plot_loss_curves(train_fno, test_fno, log_train_fno, log_test_fno, mode, width, epoch):
-    display.clear_output(wait=True)
-    # display.display(pl.gcf())
-    plt.close('all')
+def plot_loss_curves(train_fno, test_fno, log_train_fno, log_test_fno, mode, width, epoch, prefix="Small"):
     x = [i for i in range(len(log_train_fno))]
     plt.plot(x[1::1], log_train_fno[1::1])
-    stem = '/central/groups/mlprojects/eikonal/Losses/'
-    filename = stem + 'lossPlotSmall-mode-' + str(mode) + '-width-' + str(width) + '-epoch-' + str(epoch)  + ".jpg"
+    stem = '/central/groups/mlprojects/eikonal/Experiments/'+str(prefix)+'/'
+    mkdir_if_not_exists(stem)
+    filename = stem + f'lossPlot-{prefix}-mode-' + str(mode) + '-width-' + str(width) + '-epoch-' + str(epoch)  + ".jpg"
     title = 'Loss Curves (Mode: ' + str(mode) + ' Width: ' + str(width) + ' Epoch: ' + str(epoch) + ")"
     plt.title(title)
     plt.xlabel('Epochs')
     plt.ylabel('Log Loss (L2)')
     plt.plot(x[1::1], log_test_fno[1::1])
     plt.legend(['Train', 'Test'])
-    plt.savefig(filename)
-    plt.show()
+    try:
+        plt.savefig(filename)
+    except:
+        pass
 
-def plot_residuals(losses, mode, width, epoch, isTest=True):
-    stem = '/central/groups/mlprojects/eikonal/Residuals/'
-    filename = stem + 'residualsSmall-mode-' + str(mode) + '-width-' + str(width) + '-epoch-' + str(epoch)  + ".jpg"
+def plot_residuals(losses, mode, width, epoch, isTest=True, prefix="Small"):
+    stem = '/central/groups/mlprojects/eikonal/Experiments/'+str(prefix)+'/'
+    mkdir_if_not_exists(stem)
+    filename = stem + f'residuals-{prefix}-mode-' + str(mode) + '-width-' + str(width) + '-epoch-' + str(epoch)  + ".jpg"
     title = 'Residuals Histogram (Mode: ' + str(mode) + ' Width: ' + str(width) + ' Epoch: ' + str(epoch) + ")"
     plt.title(title)
     plt.xlabel('Image Loss')
     plt.ylabel('Amount')
     plt.hist(losses, bins=30)
     plt.legend('Train' if not isTest else 'Test')
-    plt.savefig(filename)
-    plt.show()
+    try:
+        plt.savefig(filename)
+    except:
+        pass
