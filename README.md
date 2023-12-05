@@ -21,8 +21,6 @@ promising step forward for seismic tomography.
 
 This project is supported on Mac and Caltech HPC. The installation instructions will demonstrate only how to set up the codebase on HPC, which is Caltech's High Performance Computing clusters.
 
-### Main environment setup
-
 First, you will need to SSH into HPC, and you can login as follows:
 
 ```sh
@@ -35,7 +33,7 @@ You will be asked for your access password and Duo 2FA authentication.
 
 Our setup uses VS Code's [Remote Explorer](https://code.visualstudio.com/docs/remote/ssh), where you should connect to hpc.caltech.edu at the folder `/central/groups/mlprojects/eikonal`. You can open a terminal there and run the commands in a terminal instead of using SSH directly like mentioned before. Remember that you will be asked for your access password first, and then should type 1 on the next prompt to be sent a Duo push for verification.
 
-#### Conda environment
+### Conda environment
 
 If this is your first time working in HPC, you will need to run:
 ```sh
@@ -52,18 +50,35 @@ python -m ipykernel install --user --name base --display-name "Python (base)"
 conda install -c anaconda jupyter
 ```
 
-Then, to create the environment, you should run:
+Then, to create the environment and enable, you should run:
 
 ```sh
-conda env create -f Code/conda-envs/ejpatel_env.yml -n Eikonal
-conda activate Eikonal
+$ conda env create -f Code/conda-envs/ejpatel_env.yml -n Eikonal
+$ conda init bash
+$ conda init zsh
+$ source ~/.bashrc
+
+(base) [username@login1 eikonal]$ conda activate Eikonal
+(Eikonal) [username@login1 eikonal]$ 
 ```
 
 Finally, to set up everything with some final libraries:
 
 ```sh
-module load cuda/11.8
-conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
+(Eikonal) [username@login1 eikonal]$ module load cuda/11.8
+(Eikonal) [username@login1 eikonal]$ conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
+```
+
+You will need to activate the conda environment every time you connect via SSH. You can avoid this by doing:
+```sh
+(Eikonal) [username@login1 eikonal]$ echo "conda activate Eikonal" >> ~/.bashrc
+```
+
+This works because the `~/.bashrc` file (and all commands in it) is run when a shell session starts!
+
+From here, you can run the following to test if the environment is working:
+```sh
+(Eikonal) [username@login1 eikonal]$ 
 ```
 
 ### Jupyter Notebooks
