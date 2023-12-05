@@ -23,10 +23,10 @@ This project is supported on Mac and Caltech HPC. The installation instructions 
 
 First, you will need to SSH into HPC, and you can login as follows:
 
-```sh
+```console
 $ ssh username@hpc.caltech.edu
-[username@login1 ~] cd /central/groups/mlprojects/eikonal
-[username@login1 eikonal] ls
+[username@login1 ~]$ cd /central/groups/mlprojects/eikonal
+[username@login1 eikonal]$ ls
 ```
 
 You will be asked for your access password and Duo 2FA authentication.
@@ -52,7 +52,7 @@ conda install -c anaconda jupyter
 
 Then, to create the environment and enable, you should run:
 
-```sh
+```console
 $ conda env create -f Code/conda-envs/ejpatel_env.yml -n Eikonal
 $ conda init bash
 $ conda init zsh
@@ -64,23 +64,64 @@ $ source ~/.bashrc
 
 Finally, to set up everything with some final libraries:
 
-```sh
+```console
 (Eikonal) [username@login1 eikonal]$ module load cuda/11.8
 (Eikonal) [username@login1 eikonal]$ conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
 ```
 
 You will need to activate the conda environment every time you connect via SSH. You can avoid this by doing:
-```sh
+```console
 (Eikonal) [username@login1 eikonal]$ echo "conda activate Eikonal" >> ~/.bashrc
 ```
 
 This works because the `~/.bashrc` file (and all commands in it) is run when a shell session starts!
 
-From here, you can run the following to test if the environment is working:
-```sh
-(Eikonal) [username@login1 eikonal]$ 
+## Run FNO models
+
+### Training
+
+After setup, you can run the following to test if the environment is working:
+```console
+# full option names
+(Eikonal) [username@login1 eikonal]$ python Code/final_train.py --modes 8 --width 64 --batch_size 32 --epochs 1000 --saveinterval 50 --cpu --smalldataset
+# shorthand
+(Eikonal) [username@login1 eikonal]$ python Code/final_train.py -m 8 -w 64 -b 32 -e 1000 -s 50 --cpu --smalldataset
+========================================
+RUN DETAILS
+========================================
+MODES=8, WIDTH=64, BATCH SIZE=32, GPU=False, BIG DATASET=False, EPOCHS=1000, SAVE INTERVAL=50
+
+========================================
+BEGIN RUN
+========================================
+loading dataset
+finished loading dataset
+finished loading metadata
+begin training!!
+(and so on...)
 ```
 
-### Jupyter Notebooks
+This will create a folder called `Experiments/modss8-width64-batchsize32-cpu-SMALL-timestamp`. This is useful because it will save checkpointed models and loss curves for the first 5 epochs and 50 epochs (or whatever was set by `--saveinterval`). It also stores the actual losses (and log losses) in a csv file.
 
-You can access HPC interactively [here](https://interactive.hpc.caltech.edu/), and navigating to `Interactive Apps > Jupyter Notebook - Compute Host`.
+### Visualizations
+
+TODO
+
+## Jupyter Notebooks
+
+Before you create an instance of the notebook running, you will need to set up the code directory correctly. First, when you open a Jupyter instance, the code directory is your home directory. We can create a symlink of the code folder to a folder in your home directory.
+
+```sh
+ln -s /central/groups/mlprojects/eikonal  ~/eikonal
+```
+
+Next, with your conda environment activated, you want to add a reference to this conda environment to the jupyter notebook as follows:
+```console
+(Eikonal) [username@login1 eikonal]$ python -m ipykernel install --user --name Eikonal --display-name "Python (Eikonal)"
+```
+
+Finally, you can access HPC interactively [here](https://interactive.hpc.caltech.edu/), and navigating to `Interactive Apps > Jupyter Notebook - Compute Host`.
+
+Then, start an instance with 128GB of CPU and runtime however long you need (maybe 2 hours if you're playing around). 
+
+Inside the Jupyter notebook, change the kernel type to "Python (Eikonal)" and you will have the correct environment running, and be able to import everything as desired! In order to test that this is running, open `~/eikonal/Code/Final: Full Training.ipynb`. 
