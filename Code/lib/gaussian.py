@@ -33,10 +33,10 @@ class UnitGaussianNormalizer(object):
             self.std = torch.from_numpy(np.std(x_np, axis=0))
         else:
             self.userange = False
-            self.mean = torch.tensor(meanval)
-            self.min = torch.tensor(minval)
-            self.max = torch.tensor(maxval)
-            self.std = torch.tensor(stdval)
+            self.mean = np.float64(meanval)
+            self.min = np.float64(minval)
+            self.max = np.float64(maxval)
+            self.std = np.float64(stdval)
 
         self.eps = eps
         self.time_last = time_last # if the time dimension is the last dim

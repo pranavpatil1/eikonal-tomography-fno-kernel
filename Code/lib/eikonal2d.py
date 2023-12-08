@@ -13,7 +13,7 @@ from lib.datahelper import EikonalDataset
 from lib.fno import*
 from lib.datahelper import UnitGaussianNormalizer
 from lib.gaussian import gaussian_function_vectorized, gaussian_function
-
+import pickle
 
 try:
     import pykonal
@@ -384,8 +384,8 @@ def _solve_linearized_fwd_inv(vel0: np.ndarray, delta_v: np.ndarray, ishot: int,
     _fmm_tt_lin_fwd_inv(delta_v, delta_tt, vel0, tt0, tt_idx, dx, dz)
     return delta_v
 
-def _solve_linearized_adj(vel0: np.ndarray, data: np.ndarray, ishot: int, dx: float, dz: float, tt0: np.ndarray, tt_idx: np.ndarray, SouPos, RecPos: np.ndarray, fno_model, y_normalizer):
-    print("REG")
+def _solve_linearized_adj(vel0: np.ndarray, data: np.ndarray, ishot: int, dx: float, dz: float, tt0: np.ndarray, tt_idx: np.ndarray, SouPos, RecPos: np.ndarray, Model):
+    print("Using Adjoint of FMM to Compute Sensitivity Kernels...")
     delta_tt = np.zeros_like(vel0)
     delta_v = np.zeros_like(vel0)
     # Sorting traveltime in ascending order
@@ -396,84 +396,62 @@ def _solve_linearized_adj(vel0: np.ndarray, data: np.ndarray, ishot: int, dx: fl
     _fmm_tt_lin_adj(delta_v, delta_tt, vel0, tt0, tt_idx, dx, dz)
     return delta_v
 
-def _solve_linearized_adj_model(vel0: np.ndarray, data: np.ndarray, ishot: int, dx: float, dz: float, tt0: np.ndarray, tt_idx: np.ndarray, SouPos, RecPos: np.ndarray, fno_model, y_normalizer):
-    print("MODEL")
+def _solve_linearized_adj_model(vel0: np.ndarray, data: np.ndarray, ishot: int, dx: float, dz: float, tt0: np.ndarray, tt_idx: np.ndarray, SouPos, RecPos: np.ndarray, Model):
+    print("Using FNO Model to Compute Sensitivity Kernels...")
     XX, ZZ = np.meshgrid(np.linspace(0, 1, 100), np.linspace(0, 1, 100))
 
-    fno_model = torch.load('model-mode-8-width-64-epoch-1000', map_location=torch.device('cpu'))
-    filename = '../Data/DatVel30_Sou100_Rec100_Dim100x100_Downsampled.npz'
-    with np.load(filename, allow_pickle=True) as fid:
-        train_data = EikonalDataset(fid, 'train')
-    x_train_vels = train_data.vels
+    vel_metadata_file='./lib/largefile-vels-metadata.pkl'
+    kernel_metadata_file='./lib/largefile-kernels-metadata.pkl'
 
-    # x_normalizer = UnitGaussianNormalizer(torch.tensor(np.float32(vel0)))
-    x_normalizer = UnitGaussianNormalizer(x_train_vels)
+    with open(vel_metadata_file, 'rb') as f:
+        vel_metadata = pickle.loads(f.read())
+
+    with open(kernel_metadata_file, 'rb') as f:
+        kernel_metadata = pickle.loads(f.read())
+
+    x_normalizer = UnitGaussianNormalizer(
+        meanval=vel_metadata['mean'],
+        stdval=vel_metadata['std'],
+        maxval=vel_metadata['max'],
+        minval=vel_metadata['min'],
+    )
+
+    y_normalizer = UnitGaussianNormalizer(
+        meanval=kernel_metadata['mean'],
+        stdval=kernel_metadata['std'],
+        maxval=kernel_metadata['max'],
+        minval=kernel_metadata['min'],
+    )
 
     tmp1 = x_normalizer.encode(np.float32(vel0))
 
     source_loc_gaussian=torch.tensor(gaussian_function(XX, ZZ, np.asarray(list(SouPos[0])[::-1]).flatten()/100))
     tmp2 = np.float32(source_loc_gaussian)
 
-    # print("max: " + str(np.amax(np.float32(vel0))))
-    # print("min: " + str(np.amin(np.float32(vel0))))
-
     out = np.zeros((100, 100))
 
     for iRec in range(RecPos.shape[0]):
         rec_loc_gaussian=torch.tensor(gaussian_function(XX, ZZ, np.asarray(list(RecPos[iRec])[::-1]).flatten()/100))
-        # tmp1 = np.float32(vel0) - 1
         tmp3 = np.float32(rec_loc_gaussian)
-
 
         tmp = np.asarray([tmp1, tmp2, tmp3], dtype=float)
         x = torch.from_numpy(np.expand_dims(np.transpose(tmp), axis=0))
-
         x = x.type(torch.float32)
 
         x_np0 = x[0,:,:,0].cpu().numpy()
         x_np1 = x[0,:,:,1].cpu().numpy()
         x_np2 = x[0,:,:,2].cpu().numpy()
 
-        print(x.shape)
-        
-        # print("max: " + str(np.amax(x_np0)))
-        # print("min: " + str(np.amin(x_np0)))
-
-        out_sample1 = y_normalizer.decode(fno_model(x).squeeze(-1))
-        # out_sample1 = fno_model(x).squeeze(-1)
+        out_sample1 = y_normalizer.decode(Model(x).squeeze(-1))
         out_sample1 = out_sample1.detach().numpy()[0, :, :] 
-
         out += out_sample1
-
-        # fig, axs = plt.subplots(1, 4, figsize=(16, 4))
-
-        # # Display the images
-        # axs[0].imshow(x_np0, cmap='jet_r')  # you can change the colormap if needed
-        # axs[0].set_title("x_sample")
-        # axs[0].axis('off')  # Hide the axis values
-
-        # axs[1].imshow(x_np1, cmap='jet_r')  # you can change the colormap if needed
-        # axs[1].set_title("source")
-        # axs[1].axis('off')  # Hide the axis values
-
-        # axs[2].imshow(x_np2, cmap='jet_r')  # you can change the colormap if needed
-        # axs[2].set_title("receiver")
-        # axs[2].axis('off')  # Hide the axis values
-
-        # im=axs[3].imshow(out_sample1, cmap='gray')  # you can change the colormap if needed
-        # fig.colorbar(im, ax=axs[3])
-        # axs[3].set_title("kernel")
-        # axs[3].axis('off')  # Hide the axis values
-
-        # plt.tight_layout()
-        # plt.show()
 
     return out
 
 
 class EikonalTT_2D(o.Operator):
     
-    def __init__(self, vel: o.Vector, tt_data: o.Vector, SouPos: np.ndarray, RecPos: np.ndarray, dx: float = None, dz: float = None):
+    def __init__(self, vel: o.Vector, tt_data: o.Vector, SouPos: np.ndarray, RecPos: np.ndarray, Model, dx: float = None, dz: float = None):
         """2D Eikonal-equation traveltime prediction operator"""
         # Setting Domain and Range of the operator
         super(EikonalTT_2D, self).__init__(domain=vel, range=tt_data)
@@ -482,6 +460,8 @@ class EikonalTT_2D(o.Operator):
         self.nr = RecPos.shape[0]
         self.SouPos = SouPos.copy()
         self.RecPos = RecPos.copy()
+        self.model = Model
+        self.model.eval()
         dataShape = tt_data.shape
         if dataShape[0] != self.ns:
             raise ValueError("Number of sources inconsistent with traveltime vector (shape[0])")
@@ -513,7 +493,7 @@ class EikonalTT_2D(o.Operator):
 
 class EikonalTT_lin_2D(o.Operator):
     
-    def __init__(self, vel: o.Vector, tt_data: o.Vector, SouPos: np.ndarray, RecPos: np.ndarray, dx: float = None, dz: float = None, tt_maps=None):
+    def __init__(self, vel: o.Vector, tt_data: o.Vector, SouPos: np.ndarray, RecPos: np.ndarray, Model, dx: float = None, dz: float = None, tt_maps=None):
         """2D Eikonal-equation traveltime prediction operator"""
         # Setting Domain and Range of the operator
         super(EikonalTT_lin_2D, self).__init__(domain=vel, range=tt_data)
@@ -522,6 +502,8 @@ class EikonalTT_lin_2D(o.Operator):
         self.nr = RecPos.shape[0]
         self.SouPos = SouPos.copy()
         self.RecPos = RecPos.copy()
+        self.model = Model
+        self.model.eval()
         dataShape = tt_data.shape
         if dataShape[0] != self.ns:
             raise ValueError("Number of sources inconsistent with traveltime vector (shape[0])")
@@ -572,16 +554,6 @@ class EikonalTT_lin_2D(o.Operator):
             func = _solve_linearized_adj
         else:  
             func = _solve_linearized_adj_model
-        
-        fno_model = torch.load('model-mode-8-width-64-epoch-1000', map_location=torch.device('cpu'))
-        filename = '../Data/DatVel30_Sou100_Rec100_Dim100x100_Downsampled.npz'
-        with np.load(filename, allow_pickle=True) as fid:
-            train_data = EikonalDataset(fid, 'train')
-        x_train_vels = train_data.vels
-
-        y_train = train_data.kernels
-        y_normalizer = UnitGaussianNormalizer(y_train)
-        fno_model.eval()
 
         self.checkDomainRange(model, data)
         if not add:
@@ -597,7 +569,7 @@ class EikonalTT_lin_2D(o.Operator):
         # Computing velocity perturbation #
         ###################################
         for shot in range(self.ns):
-            model[:] += func(self.vel[:], data[:], shot, self.dx, self.dz, self.tt_maps[shot], self.tt_idx, self.SouPos, self.RecPos, fno_model, y_normalizer)
+            model[:] += func(self.vel[:], data[:], shot, self.dx, self.dz, self.tt_maps[shot], self.tt_idx, self.SouPos, self.RecPos, self.model)
         return
 
     
