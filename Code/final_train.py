@@ -19,6 +19,7 @@ from timeit import default_timer
 
 from lib.utilities3 import *
 from lib.datahelper import *
+from lib.dataset_raw import *
 from lib.fno import *
 
 from lib.memorytracking import save_memory_usage
@@ -36,12 +37,10 @@ parser.add_argument('-w', '--width', type=int)
 parser.add_argument('-b', '--batch_size', type=int)
 parser.add_argument('-e', '--epochs', type=int, default=250)
 parser.add_argument('-s', '--saveinterval', type=int, default=10)
-parser.add_argument('-c', '--checkpoint', type=str, default='')
 
 # bool args
 parser.add_argument('--cpu', action="store_true")
 parser.add_argument('--smalldataset', action="store_true")
-parser.add_argument('--transforms', action="store_true")
 
 # load everything
 args = parser.parse_args()
@@ -49,25 +48,17 @@ args = parser.parse_args()
 MODES = args.modes
 WIDTH = args.width
 BATCH_SIZE = args.batch_size
-CHECKPOINT_FILE = args.checkpoint
 
 # if we should use cuda
 GPU = False if args.cpu else True
 # if we should use full version of dataset
-DATASET_BIG = False if args.smalldataset else True 
-# if we should data augment with transforms
-TRANSFORMS = False if args.transforms else True
-if TRANSFORMS:
-    from lib.dataset_raw_transform import *
-else:
-    from lib.dataset_raw import *
-# how many epochs to run for
+DATASET_BIG = False if args.smalldataset else True # how many epochs to run for
 EPOCHS = args.epochs
 # how often to save model/residual graphs
 SAVE_INTERVAL = args.saveinterval
 
 # change this on every experiment
-EXPERIMENT = f"encoded-batchsize{BATCH_SIZE}-{'gpu' if GPU else 'cpu'}-{'BIG' if DATASET_BIG else 'SMALL'}-{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+EXPERIMENT = f"modes{MODES}-width{WIDTH}-batchsize{BATCH_SIZE}-{'gpu' if GPU else 'cpu'}-{'BIG' if DATASET_BIG else 'SMALL'}-{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
 
 print ("=" * 40)
 print ("RUN DETAILS")
@@ -80,11 +71,12 @@ print ("=" * 40)
 print ("BEGIN RUN")
 print ("=" * 40)
 
-filename = '../Data/DatVel5000_Sou10_Rec10_Dim100x100_Gradient_Encoded.npz'
+file_dir = os.path.dirname(os.path.realpath(__file__))
+filename = f'{file_dir}/../Data/DatVel5000_Sou10_Rec10_Dim100x100_Gradient_Encoded.npz'
 if not DATASET_BIG:
-    filename = '../Data/DatVel30_Sou100_Rec100_Dim100x100_Downsampled_Encoded.npz'
+    filename = f'{file_dir}/../Data/DatVel30_Sou100_Rec100_Dim100x100_Downsampled_Encoded.npz'
 
-memory_savefile = f"memprofiles/out-{EXPERIMENT}.pkl"
+memory_savefile = f"{file_dir}/memprofiles/out-{EXPERIMENT}.pkl"
 memory_tracker = []
 
 # shorthand
@@ -108,7 +100,7 @@ savemem("dataloader")
 
 learning_rate = 0.0005
 
-kernel_metadata_file='./lib/largefile-kernels-metadata.pkl'
+kernel_metadata_file=f'{file_dir}/lib/largefile-kernels-metadata.pkl'
 
 with open(kernel_metadata_file, 'rb') as f:
     kernel_metadata = pickle.loads(f.read())
@@ -125,10 +117,7 @@ y_normalizer = UnitGaussianNormalizer(
 ######## TRAINING
 
 print ("begin training!!")
-if CHECKPOINT_FILE == '':
-    fno_model = FNO2d(MODES, MODES, WIDTH)
-else:
-    fno_model = torch.load(CHECKPOINT_FILE)
+fno_model = FNO2d(MODES, MODES, WIDTH)
 if GPU:
     fno_model = fno_model.cuda()
 
@@ -221,8 +210,6 @@ for ep in range(1, EPOCHS + 1):
 
     if ep < 5 or ep % SAVE_INTERVAL == 0:
         plot_loss_curves(train_fno, test_fno, log_train_fno, log_test_fno, MODES, WIDTH, ep, prefix=prefix)
-        for i in range(len(train_fno)):
-            print(f"epoch: {i}, \tl2 train: {train_fno[i]} \tl2 test: {test_fno[i]}")
 
 t2 = default_timer()
 max_memory = torch.cuda.max_memory_allocated() - before_memory

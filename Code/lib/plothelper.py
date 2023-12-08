@@ -62,7 +62,7 @@ def plot(model_file, model, data, plot_type):
     filedir = f'{stem}{model_expirement}/{model_params}/'
     filename = f'{stem}{model_expirement}/{model_params}/{plot_type}_visual.jpg'
 
-    data_indices = [0, 100, 200, 300]
+    data_indices = [0, 10, 20, 30]
     fig, axs = plt.subplots(len(data_indices), 5, figsize=(15, len(data_indices) * 2))
 
     for i in range(len(data_indices)):
@@ -90,10 +90,12 @@ def plot(model_file, model, data, plot_type):
         axs[i, 0].imshow(vfd)
         plt.colorbar(axs[i, 0].imshow(vfd))
         axs[i, 1].imshow(src - rec)
+
         axs[i, 2].imshow(truth, vmin=min_kernel, vmax=max_kernel)
         plt.colorbar(axs[i, 2].imshow(truth, vmin=min_kernel, vmax=max_kernel))
         axs[i, 3].imshow(pred, vmin=min_kernel, vmax=max_kernel)
         plt.colorbar(axs[i, 3].imshow(pred, vmin=min_kernel, vmax=max_kernel))
+
         axs[i, 4].imshow(difference, cmap='PiYG')
         plt.colorbar(axs[i, 4].imshow(difference, cmap='PiYG'))
 
