@@ -124,4 +124,8 @@ Finally, you can access HPC interactively [here](https://interactive.hpc.caltech
 
 Then, start an instance with 128GB of CPU and runtime however long you need (maybe 2 hours if you're playing around). 
 
-Inside the Jupyter notebook, change the kernel type to "Python (Eikonal)" and you will have the correct environment running, and be able to import everything as desired! In order to test that this is running, open `~/eikonal/Code/Final: Full Training.ipynb`. 
+Inside the Jupyter notebook, change the kernel type to "Python (Eikonal)" and you will have the correct environment running, and be able to import everything as desired! In order to test that this is running, open `~/eikonal/Code/Deliverable: Full Training.ipynb`. 
+
+### Computing Inverse Problem Sensitivity Kernels
+
+You can run the `~/eikonal/Code/Deliverable: Computing Inverse Problem Sensitivity Kernels.ipynb` in order to use models as inferences in the inverse problem to compute sensitivity kernels. The sensitivity kernels are computed twice: once using an FNO model, and once using the adjoint of the FMM (which is taken to be the ground truth). In the notebook, first, the velocity field is initialized, the source/receiver positions are intialized, and the FNO model is loaded. Note that all three of these variables can be customized in the cell under `Choose Starting Velocity Field, FNO Model, and Source/Receiver Positions`. Then, the sensitivity kernels are computed using the two approached. Finally, the two approaches are compared side-by-side along with an absolute difference plot for clearer visualization.
