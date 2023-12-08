@@ -129,3 +129,47 @@ Inside the Jupyter notebook, change the kernel type to "Python (Eikonal)" and yo
 ### Computing Inverse Problem Sensitivity Kernels
 
 You can run the `~/eikonal/Code/Deliverable: Computing Inverse Problem Sensitivity Kernels.ipynb` in order to use models as inferences in the inverse problem to compute sensitivity kernels. The sensitivity kernels are computed twice: once using an FNO model, and once using the adjoint of the FMM (which is taken to be the ground truth). In the notebook, first, the velocity field is initialized, the source/receiver positions are intialized, and the FNO model is loaded. Note that all three of these variables can be customized in the cell under `Choose Starting Velocity Field, FNO Model, and Source/Receiver Positions`. Then, the sensitivity kernels are computed using the two approached. Finally, the two approaches are compared side-by-side along with an absolute difference plot for clearer visualization.
+
+## Full Workflow
+
+### Dataset
+
+The data is formatted in an npz file with 4 numpy arrays with names/keys: vels (100x100 velocity field), kernels (100x100 output field), source_loc (x-y pair), rec_loc (x-y pair).
+
+There are 3 datasets (in `/central/scratch/ebiondi/`):
+- DatVel30_Sou100_Rec100_Dim100x100_Downsampled.npz has a smaller subset of the full dataset with just one velocity field for all inputs (but varying source and receiver locations)
+- DatVel5000_Sou10_Rec10_Dim100x100_Gradient.npz has has a larger dataset with varying velocity fields that are gradients (transition from low to high along some direction)
+- Not included in training so far is the full dataset with velocity fields that represent all possible functions as input (FUTURE WORK)
+
+### Pre-processing
+
+#### Pre-computing mean/std
+
+We find the mean and standard deviation of the dataset once in `Code/pranav_create_encoder.py` where we take in an input dataset in the `filename` variable and output it to the file specified by `outfile`. 
+
+This will store the mean and standard deviation for the velocity fields and kernel fields separately. This will allow us to create separate x and y encoders.
+
+#### Saving encoded data
+
+Once we have our pickle file with mean/std, we use `Code/pranav_encode_data_and_save.py` to encode the velocity/kernel fields and save to a new file.
+
+You will need to specify both of `vel_metadata_file` and `kernel_metadata_file` as the two pkl files outputted by the previous step. Then, we will need to specify the input (existing) dataset in `filename` and `outfile` which specifies where the data should be saved.
+
+#### Creating an encoder from a pickle file
+
+Here is an excerpt for how to create an encoder:
+
+```python
+import pickle
+from lib.datahelper import UnitGaussianNormalizer
+
+with open(vel_metadata_file, 'rb') as f:
+    vel_metadata = pickle.loads(f.read())
+
+x_encoder = UnitGaussianNormalizer(
+    meanval=vel_metadata['mean'],
+    stdval=vel_metadata['std'],
+    maxval=vel_metadata['max'],
+    minval=vel_metadata['min'],
+)
+```
